@@ -65,7 +65,7 @@ public class UnpooledDirectByteBuf extends AbstractReferenceCountedByteBuf {
         }
 
         this.alloc = alloc;
-        setByteBuffer(ByteBuffer.allocateDirect(initialCapacity));
+        setByteBuffer(allocateBuffer(initialCapacity));
         leak = leakDetector.open(this);
     }
 
@@ -108,7 +108,7 @@ public class UnpooledDirectByteBuf extends AbstractReferenceCountedByteBuf {
             if (doNotFree) {
                 doNotFree = false;
             } else {
-                PlatformDependent.freeDirectBuffer(oldBuffer);
+                freeBuffer(oldBuffer);
             }
         }
 
@@ -140,7 +140,7 @@ public class UnpooledDirectByteBuf extends AbstractReferenceCountedByteBuf {
         int oldCapacity = capacity;
         if (newCapacity > oldCapacity) {
             ByteBuffer oldBuffer = buffer;
-            ByteBuffer newBuffer = ByteBuffer.allocateDirect(newCapacity);
+            ByteBuffer newBuffer = allocateBuffer(newCapacity);
             oldBuffer.position(readerIndex).limit(writerIndex);
             newBuffer.position(readerIndex).limit(writerIndex);
             newBuffer.put(oldBuffer);
@@ -148,7 +148,7 @@ public class UnpooledDirectByteBuf extends AbstractReferenceCountedByteBuf {
             setByteBuffer(newBuffer);
         } else if (newCapacity < oldCapacity) {
             ByteBuffer oldBuffer = buffer;
-            ByteBuffer newBuffer = ByteBuffer.allocateDirect(newCapacity);
+            ByteBuffer newBuffer = allocateBuffer(newCapacity);
             if (readerIndex < newCapacity) {
                 if (writerIndex > newCapacity) {
                     writerIndex(writerIndex = newCapacity);
@@ -516,7 +516,7 @@ public class UnpooledDirectByteBuf extends AbstractReferenceCountedByteBuf {
         this.buffer = null;
 
         if (!doNotFree) {
-            PlatformDependent.freeDirectBuffer(buffer);
+            freeBuffer(buffer);
         }
 
         if (leak != null) {
@@ -527,5 +527,13 @@ public class UnpooledDirectByteBuf extends AbstractReferenceCountedByteBuf {
     @Override
     public ByteBuf unwrap() {
         return null;
+    }
+
+    protected void freeBuffer(ByteBuffer buffer) {
+        PlatformDependent.freeDirectBuffer(buffer);
+    }
+
+    protected ByteBuffer allocateBuffer(int newCapacity) {
+        return ByteBuffer.allocateDirect(newCapacity);
     }
 }
