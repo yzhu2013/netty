@@ -22,12 +22,15 @@ import io.netty.channel.Channel;
 import io.netty.channel.ChannelException;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelMetadata;
+import io.netty.channel.ChannelOutboundBuffer;
 import io.netty.channel.ChannelPromise;
+import io.netty.channel.DefaultAddressedEnvelope;
 import io.netty.channel.RecvByteBufAllocator;
 import io.netty.channel.nio.AbstractNioMessageChannel;
 import io.netty.channel.socket.DatagramChannelConfig;
 import io.netty.channel.socket.DatagramPacket;
 import io.netty.channel.socket.InternetProtocolFamily;
+import io.netty.util.ReferenceCountUtil;
 import io.netty.util.internal.PlatformDependent;
 import io.netty.util.internal.StringUtil;
 
@@ -223,10 +226,10 @@ public final class NioDatagramChannel
     }
 
     @Override
-    protected boolean doWriteMessage(Object msg) throws Exception {
+    protected boolean doWriteMessage(Object msg, ChannelOutboundBuffer in) throws Exception {
         final Object m;
-        final ByteBuf data;
         final SocketAddress remoteAddress;
+        ByteBuf data;
         if (msg instanceof AddressedEnvelope) {
             @SuppressWarnings("unchecked")
             AddressedEnvelope<Object, SocketAddress> envelope = (AddressedEnvelope<Object, SocketAddress>) msg;
@@ -250,13 +253,13 @@ public final class NioDatagramChannel
             return true;
         }
 
+        boolean direct = data.nioBufferCount() == 1 && data.isDirect();
         ByteBuffer nioData;
-        if (data.nioBufferCount() == 1) {
+        if (direct) {
             nioData = data.nioBuffer();
         } else {
-            nioData = ByteBuffer.allocate(dataLen);
-            data.getBytes(data.readerIndex(), nioData);
-            nioData.flip();
+            data = alloc().directBuffer(dataLen).writeBytes(data);
+            nioData = data.nioBuffer();
         }
 
         final int writtenBytes;
@@ -266,7 +269,24 @@ public final class NioDatagramChannel
             writtenBytes = javaChannel().write(nioData);
         }
 
-        return writtenBytes > 0;
+        boolean done =  writtenBytes > 0;
+        if (!direct) {
+            // This means we have allocated a new buffer and need to store it back so we not need to allocate it again
+            // later
+            if (remoteAddress == null) {
+                // remoteAddress is null which means we can handle it as ByteBuf directly
+                in.current(data);
+            } else {
+                if (!done) {
+                    // store it back with all the needed informations
+                    in.current(new DefaultAddressedEnvelope<ByteBuf, SocketAddress>(data, remoteAddress));
+                } else {
+                    // Just store back the new create buffer so it is cleaned up once in.remove() is called.
+                    in.current(data);
+                }
+            }
+        }
+        return done;
     }
 
     @Override

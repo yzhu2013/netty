@@ -227,6 +227,16 @@ public final class ChannelOutboundBuffer {
         }
     }
 
+    /**
+     * Replace the current msg with the given one.
+     * The replaced msg will automatically be released
+     */
+    public void current(Object msg) {
+        Entry entry =  buffer[this.flushed];
+        safeRelease(entry.msg);
+        entry.msg = msg;
+    }
+
     public void progress(long amount) {
         Entry e = buffer[flushed];
         ChannelPromise p = e.promise;
